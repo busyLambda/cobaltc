@@ -33,6 +33,7 @@ pub enum TokenKind {
     KwStruct,
     KwEnum,
     // Funnies
+    Comma,
     RightArrow,
     Column,
     Coleq,
@@ -62,12 +63,30 @@ pub enum TokenKind {
 
 impl TokenKind {
     pub fn is_type(&self) -> bool {
-        match self {
-            TokenKind::Tint => true,
-            TokenKind::Identifier => true,
-            TokenKind::Tvoid => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::Tint
+                | Self::Tvoid
+                | Self::Tbool
+                | Self::Tstring
+                | Self::Tfloat
+                | Self::Tchar
+                | Self::Identifier
+        )
+    }
+
+    pub fn is_operator(&self) -> bool {
+        matches!(
+            self,
+            Self::Add
+                | Self::Min
+                | Self::Mul
+                | Self::Div
+                | Self::Mod
+                | Self::Not
+                | Self::Eq
+                | Self::EqEq
+        )
     }
 }
 
@@ -94,4 +113,3 @@ impl Token {
         (self.span.start, self.span.end)
     }
 }
-

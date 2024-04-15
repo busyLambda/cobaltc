@@ -4,7 +4,21 @@ use super::{
 };
 
 impl Lexer {
-    pub fn next(&mut self) -> Token {
+    pub fn lex(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+
+        while !self.is_eof() {
+            let token = self.next();
+            tokens.push(token);
+        }
+
+        tokens
+            .into_iter()
+            .filter(|t| t.kind() != TokenKind::Whitespace)
+            .collect::<Vec<Token>>()
+    }
+
+    fn next(&mut self) -> Token {
         if self.is_eof() {
             return Token::new(TokenKind::EOF, Span::new(0, 0, String::new()));
         }
@@ -13,6 +27,7 @@ impl Lexer {
 
         let kind = match c {
             c if c.is_alphabetic() => self.ident_or_kw_or_type(),
+            ',' => TokenKind::Comma,
             '(' => TokenKind::OpenParen,
             ')' => TokenKind::ClosedParen,
             '{' => TokenKind::OpenCurly,
