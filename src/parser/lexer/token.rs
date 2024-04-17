@@ -15,7 +15,6 @@ impl Span {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind {
     // Types
@@ -57,11 +56,31 @@ pub enum TokenKind {
     Not,
     // Special
     Whitespace,
+    NewLine, // For sync
     Unknown,
     EOF,
 }
 
 impl TokenKind {
+    // Stmt begin, ) } ], \n and such
+    pub fn is_sync_token(&self) -> bool {
+        matches!(
+            self,
+            Self::ClosedParen | Self::ClosedCurly | Self::ClosedBracket | Self::EOF
+        )
+    }
+    pub fn is_begin_new_stmt(&self) -> bool {
+        matches!(
+            self,
+            Self::OpenCurly
+                | Self::OpenParen
+                | Self::OpenBracket
+                | Self::KwIf
+                | Self::KwMatch
+                | Self::KwFunc
+        )
+    }
+
     pub fn is_type(&self) -> bool {
         matches!(
             self,

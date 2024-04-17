@@ -2,7 +2,7 @@ use std::{fmt::Error, ops::Range, slice::Iter};
 
 use self::lexer::token::{Token, TokenKind};
 
-mod lexer;
+pub mod lexer;
 
 pub struct Parser<'a> {
     input: Iter<'a, Token>,
@@ -10,7 +10,7 @@ pub struct Parser<'a> {
 }
 
 #[derive(Debug)]
-struct ParseError {
+pub struct ParseError {
     message: String,
     location: ErrorLocation,
 }
@@ -98,27 +98,60 @@ impl Type {
 type ParseResult<T> = Result<T, ParseError>;
 
 impl<'a> Parser<'a> {
-    fn func_param(&mut self) -> ParseResult<FuncParam> {
-        if self.is_match(TokenKind::Identifier) {
-            let name = Name::new(self.next().unwrap().literal());
-            if let Some(tok) = self.peek() {
-                if tok.kind().is_type() {
-                    let ty = Type::from_token(self.next().unwrap());
-                    let func_param = FuncParam::new(name, ty);
+    fn array_type(&mut self) -> ParseResult<Type> {
+        if self.is_match(TokenKind::OpenBracket) {
+            self.next().unwrap();
 
-                    Ok(func_param)
-                } else {
-                    Err(ParseError::new(
-                        "Expected type but found end of file.".to_string(),
-                        ErrorLocation::new(),
-                    ))
-                }
+            let ty = self.type_()?;
+
+            if self.is_match(TokenKind::ClosedBracket) {
+                self.next().unwrap();
+
+                Ok(Type::Array(Box::new(ty)))
             } else {
                 Err(ParseError::new(
-                    "Expected type but found end of file.".to_string(),
+                    "Expected `]`.".to_string(),
                     ErrorLocation::new(),
                 ))
             }
+        } else {
+            Err(ParseError::new(
+                "Expected `[`.".to_string(),
+                ErrorLocation::new(),
+            ))
+        }
+    }
+
+    fn type_(&mut self) -> ParseResult<Type> {
+        if let Some(tok) = self.peek() {
+            if tok.kind().is_type() {
+                let tok = self.next().unwrap();
+                Ok(Type::from_token(tok))
+            } else {
+                match tok.kind() {
+                    TokenKind::OpenBracket => self.array_type(),
+                    _ => Err(ParseError::new(
+                        "Expected a type but found no such thing.".to_string(),
+                        ErrorLocation::new(),
+                    )),
+                }
+            }
+        } else {
+            Err(ParseError::new(
+                "Unexpected end of file.".to_string(),
+                ErrorLocation::new(),
+            ))
+        }
+    }
+
+    fn func_param(&mut self) -> ParseResult<FuncParam> {
+        if self.is_match(TokenKind::Identifier) {
+            let name = Name::new(self.next().unwrap().literal());
+            let ty = self.type_()?;
+
+            let func_param = FuncParam::new(name, ty);
+
+            Ok(func_param)
         } else {
             Err(ParseError::new(
                 "Expected identifier".to_string(),
@@ -153,7 +186,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    fn func(&mut self) -> ParseResult<Func> {
+    pub fn func(&mut self) -> ParseResult<Func> {
         if self.is_match(TokenKind::KwFunc) {
             self.next();
         } else {
@@ -164,13 +197,15 @@ impl<'a> Parser<'a> {
         }
 
         if let Some(tok) = self.peek() {
-            if tok.kind() == TokenKind:: Identifier {
+            if tok.kind() == TokenKind::Identifier {
                 let tok = self.next().unwrap();
                 let name = Name::new(tok.literal());
-        
-        let params = self.func_params()?;
-        
-        Ok(Func::new(name, params))
+
+                let params = self.func_params()?;
+
+                let ret_ty = self.type_()?;
+
+                Ok(Func::new(name, params, ret_ty))
             } else {
                 return Err(ParseError::new(
                     "Expected identifier".to_string(),
@@ -320,7 +355,7 @@ impl<'a> Parser<'a> {
         self.input.clone().nth(1)
     }
 
-    // Eat's and returns.
+    // Eats and returns.
     fn next(&mut self) -> Option<&Token> {
         self.input.next()
     }
@@ -330,6 +365,53 @@ impl<'a> Parser<'a> {
             Some(t) => t.kind() == kind,
             None => false,
         }
+    }
+
+    fn declaration(&mut self) -> ParseResult<Var> {
+        if self.is_match(TokenKind::Identifier) {
+            let name = Name::new(self.next().unwrap().literal());
+            let ty = self.type_()?;
+
+            Ok(Var::declare(name, ty))
+        } else {
+            Err(ParseError::new(
+                "Expected identifier".to_string(),
+                ErrorLocation::new(),
+            ))
+        }
+    }
+
+    fn name(&mut self) -> ParseResult<Name> {
+        if self.is_match(TokenKind::Identifier) {
+            Ok(Name::new(self.next().unwrap().literal()))
+        } else {
+            Err(ParseError::new(
+                "Expected identifier.".to_string(),
+                ErrorLocation::new(),
+            ))
+        }
+    }
+
+    // assign := identifier = expr
+    fn assign(&mut self) -> ParseResult<Var> {
+        let name = match self.name() {
+            Ok(n) => n,
+            // TODO: Report here.
+            Err(e) => return Err(e)
+        };
+
+        if self.is_match(TokenKind::Eq) {
+            self.next().unwrap();
+        } else {
+            return Err(ParseError::new(
+                "Expected `=`.".to_string(),
+                ErrorLocation::new(),
+            ))
+        }
+
+        let expr = self.expression()?;
+
+        Ok(Var::assign(name, expr))
     }
 
     // Attempts to syncronize after an error.
@@ -365,11 +447,16 @@ pub enum Type {
 pub struct Func {
     name: Name,
     params: Vec<FuncParam>,
+    ret_ty: Type,
 }
 
 impl Func {
-    fn new(name: Name, params: Vec<FuncParam>) -> Func {
-        Func { name, params }
+    fn new(name: Name, params: Vec<FuncParam>, ret_ty: Type) -> Func {
+        Func {
+            name,
+            params,
+            ret_ty,
+        }
     }
 }
 
@@ -386,6 +473,74 @@ impl Name {
     fn name(&self) -> &str {
         &self.name
     }
+}
+
+// declare := identifier ":" type
+// assign := identifier "=" expression
+// declare_assign := identifier ":=" expression
+// complete := identifier ":" type "=" expression
+#[derive(Debug)]
+pub struct Var {
+    is_assignment: bool,
+    name: Name,
+    ty: Option<Type>,
+    expr: Option<Expression>,
+}
+
+impl Var {
+    fn is_declaration(&self) -> bool {
+        self.ty.is_some() && self.expr.is_none() && !self.is_assignment
+    }
+
+    fn is_assignment(&self) -> bool {
+        self.ty.is_none() && self.expr.is_some() && self.is_assignment
+    }
+
+    fn is_declare_assign(&self) -> bool {
+        self.ty.is_none() && self.expr.is_some() && !self.is_assignment
+    }
+
+    fn is_complete(&self) -> bool {
+        self.ty.is_some() && self.expr.is_some()
+    }
+
+    fn declare(name: Name, ty: Type) -> Var {
+        Var {
+            is_assignment: false,
+            name,
+            ty: Some(ty),
+            expr: None,
+        }
+    }
+
+    fn assign(name: Name, expr: Expression) -> Var {
+        Var {
+            is_assignment: true,
+            name,
+            ty: None,
+            expr: Some(expr),
+        }
+    }
+
+    fn declare_assign_with_inferance(name: Name, ty: Type, expr: Expression) -> Var {
+        Var {
+            is_assignment: false,
+            name,
+            ty: Some(ty),
+            expr: Some(expr),
+        }
+    }
+}
+
+#[test]
+fn test_assign() {
+    let input = "a = 5 + 5 / (10 / 2)";
+    let mut lexer = lexer::Lexer::new(input);
+    let tokens = lexer.lex();
+
+    let mut parser = Parser::new(&tokens);
+    let assign = parser.assign().unwrap();
+    println!("{:?}", assign)
 }
 
 #[test]
@@ -434,7 +589,7 @@ fn test_func_params() {
 
 #[test]
 fn test_func() {
-    let input = "func foo(bar int)";
+    let input = "func foo(bar int) int";
     let mut lexer = lexer::Lexer::new(input);
     let tokens = lexer.lex();
 

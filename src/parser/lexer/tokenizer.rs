@@ -41,6 +41,7 @@ impl Lexer {
             '%' => TokenKind::Mod,
             '[' => TokenKind::OpenBracket,
             ']' => TokenKind::ClosedBracket,
+            '\n' => TokenKind::NewLine,
             c if c.is_numeric() => self.integer(),
             c if c.is_whitespace() => self.whitespace(),
             _ => TokenKind::Unknown,
