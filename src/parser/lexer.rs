@@ -25,7 +25,7 @@ impl Lexer {
     }
 
     fn is_eof(&self) -> bool {
-        self.cursor > self.chars.len() - 1
+        self.chars.len() == 0 || self.cursor > self.chars.len() - 1
     }
 
     fn peek(&self) -> Option<char> {

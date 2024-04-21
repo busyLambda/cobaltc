@@ -32,6 +32,7 @@ pub enum TokenKind {
     KwStruct,
     KwEnum,
     // Funnies
+    At,
     Comma,
     RightArrow,
     Column,
