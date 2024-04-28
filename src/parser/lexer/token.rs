@@ -114,11 +114,22 @@ impl TokenKind {
 pub struct Token {
     kind: TokenKind,
     span: Span,
+    row: usize,
+    col: usize,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, span: Span) -> Self {
-        Self { kind, span }
+    pub fn new(kind: TokenKind, span: Span, row: usize, col: usize) -> Self {
+        Self {
+            kind,
+            span,
+            row,
+            col,
+        }
+    }
+    
+    pub fn row_col(&self) -> (usize, usize) {
+        (self.row, self.col)
     }
 
     pub fn kind(&self) -> TokenKind {

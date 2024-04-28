@@ -20,7 +20,7 @@ impl Lexer {
 
     fn next(&mut self) -> Token {
         if self.is_eof() {
-            return Token::new(TokenKind::EOF, Span::new(0, 0, String::new()));
+            return Token::new(TokenKind::EOF, Span::new(0, 0, String::new()), self.row, self.col);
         }
 
         let c = self.eat();
@@ -42,7 +42,10 @@ impl Lexer {
             '[' => TokenKind::OpenBracket,
             ']' => TokenKind::ClosedBracket,
             '@' => TokenKind::At,
-            '\n' => TokenKind::NewLine,
+            '\n' => {
+                self.inc_row();
+                TokenKind::NewLine
+            },
             c if c.is_numeric() => self.integer(),
             c if c.is_whitespace() => self.whitespace(),
             _ => TokenKind::Unknown,
@@ -50,7 +53,7 @@ impl Lexer {
 
         let span = self.span();
 
-        let token = Token::new(kind, span);
+        let token = Token::new(kind, span, self.row, self.col);
         self.reset_pos_within_tok();
 
         token

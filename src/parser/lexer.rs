@@ -11,6 +11,8 @@ pub struct Lexer {
     pos_within_tok: usize,
     pos_last_tok: usize,
     tok_str: String,
+    row: usize,
+    col: usize,
 }
 
 impl Lexer {
@@ -21,7 +23,14 @@ impl Lexer {
             pos_within_tok: 0,
             pos_last_tok: 0,
             tok_str: String::new(),
+            row: 0,
+            col: 0,
         }
+    }
+
+    fn inc_row(&mut self) {
+        self.row += 1;
+        self.col = 0;
     }
 
     fn is_eof(&self) -> bool {
@@ -43,6 +52,7 @@ impl Lexer {
 
         let c = self.chars[self.cursor];
 
+        self.col += 1;
         self.cursor += 1;
         self.pos_within_tok += 1;
 
