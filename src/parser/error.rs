@@ -82,3 +82,5 @@ impl Location {
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
+
+pub struct SyncEOF;

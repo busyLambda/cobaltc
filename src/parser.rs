@@ -1,6 +1,6 @@
-use std::{fmt::Error, ops::Range, slice::Iter};
+use std::vec;
 
-use crate::parser::error::StructureError;
+use crate::parser::{error::StructureError, parser::SyncStatus};
 
 use self::{
     error::{ErrorLocation, Location, ParseError, ParseResult, PropagatorError, PropagatorResult},
@@ -156,9 +156,7 @@ impl<'a> Parser<'a> {
 
     fn func_param(&mut self) -> PropagatorResult<FuncParam> {
         if self.is_match(TokenKind::Identifier) {
-            let errors = Vec::<PropagatorError>::new();
             let tok = self.next().unwrap();
-            let (start, _) = tok.pos();
             let name = Name::new(tok.literal());
 
             let ty = match self.type_() {
@@ -202,10 +200,21 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let mut is_first_loop = true;
+        let mut encountered_in_prev_loop = false;
+
         'eater: while let Some(tok) = self.peek() {
             if tok.kind() == TokenKind::ClosedParen {
                 self.next();
                 break;
+            }
+
+            if !is_first_loop && !encountered_in_prev_loop {
+                let prev_pos = self.prev_pos();
+                errors.push(PropagatorError::new(
+                    "Expected a `,` before function parameter.",
+                    Location::new(prev_pos.0..prev_pos.1),
+                ))
             }
 
             let param = match self.func_param() {
@@ -216,6 +225,10 @@ impl<'a> Parser<'a> {
                     loop {
                         if let Some(tok) = self.peek() {
                             match tok.kind() {
+                                TokenKind::Comma => {
+                                    self.next();
+                                    break;
+                                }
                                 TokenKind::KwFunc => break 'eater,
                                 TokenKind::NewLine => {
                                     self.next();
@@ -225,10 +238,6 @@ impl<'a> Parser<'a> {
                                     self.next();
                                     params.push(func_param);
                                     break 'eater;
-                                }
-                                TokenKind::Comma => {
-                                    self.next();
-                                    break;
                                 }
                                 _ => {
                                     self.next().unwrap();
@@ -242,9 +251,13 @@ impl<'a> Parser<'a> {
                     func_param
                 }
             };
+            is_first_loop = false;
             params.push(param);
             if self.is_match(TokenKind::Comma) {
                 self.next();
+                encountered_in_prev_loop = true;
+            } else {
+                encountered_in_prev_loop = false;
             }
         }
 
@@ -271,49 +284,35 @@ impl<'a> Parser<'a> {
             unreachable!() // The caller must check.
         }
 
-        if let Some(tok) = self.peek() {
-            if tok.kind() == TokenKind::Identifier {
-                let tok = self.next().unwrap();
-                let name = Name::new(tok.literal());
-
-                let params = self.func_params();
-
-                let ret_ty = match self.type_() {
-                    Ok(ty) => ty,
-                    Err((ty, err)) => {
-                        if self.is_eof() {
-                            self.eof("Expected return type for function but found end of file.");
-
-                            return Func::new(name, params, ty);
-                        }
-
-                        errors.push(err);
-
-                        ty
-                    }
-                };
-
-                // FIXME: COULD SIMPLYFY ALLAT!
-                let end = self.prev_pos().1;
-
-                let span = start..end;
-                errors.into_iter().for_each(|err| {
-                    self.report_error(StructureError::from_propagator(
-                        err,
-                        Location::new(span.clone()),
-                    ))
-                });
-
-                Func::new(name, params, ret_ty)
-            } else {
-                // TODO: Error recovery after not matching func <ident>.
-                todo!()
+        let name = match self.name() {
+            Ok(n) => n,
+            Err((n, err)) => {
+                errors.push(err);
+                n
             }
-        } else {
-            self.eof("Expected a function name but found end of file.");
+        };
 
-            Func::new(Name::new("".to_string()), vec![], Type::Void)
-        }
+        let params = self.func_params();
+
+        let ret_ty = match self.type_() {
+            Ok(ty) => ty,
+            Err((ty, err)) => {
+                if self.is_eof() {
+                    self.eof("Expected return type for function but found end of file.");
+
+                    return Func::new(name, params, ty);
+                }
+
+                errors.push(err);
+
+                ty
+            }
+        };
+
+        let span = start..self.prev_pos().1;
+        self.report_propagators(errors, span);
+
+        Func::new(name, params, ret_ty)
     }
 
     // array := [ { expression {"," expression}* }? ]
@@ -466,43 +465,42 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn name(&mut self) -> ParseResult<Name> {
+    fn name(&mut self) -> PropagatorResult<Name> {
         if self.is_match(TokenKind::Identifier) {
             Ok(Name::new(self.next().unwrap().literal()))
         } else {
-            Err(ParseError::new(
-                "Expected identifier.".to_string(),
-                ErrorLocation::new(),
+            let prev_pos = self.prev_pos();
+            Err((
+                Name::new(String::new()),
+                PropagatorError::new(
+                    "Expected identifier.",
+                    Location::new(prev_pos.0..prev_pos.1),
+                ),
             ))
         }
     }
 
     // assign := identifier = expr
-    fn assign(&mut self) -> ParseResult<Var> {
-        let name = match self.name() {
-            Ok(n) => n,
-            // TODO: Report here.
-            Err(e) => return Err(e),
-        };
+    // fn assign(&mut self) -> PropagatorResult<Var> {
+    //     let name = match self.name() {
+    //         Ok(n) => n,
+    //         // TODO: Report here.
+    //         Err(e) => return Err(e),
+    //     };
 
-        if self.is_match(TokenKind::Eq) {
-            self.next().unwrap();
-        } else {
-            return Err(ParseError::new(
-                "Expected `=`.".to_string(),
-                ErrorLocation::new(),
-            ));
-        }
+    //     if self.is_match(TokenKind::Eq) {
+    //         self.next().unwrap();
+    //     } else {
+    //         return Err(ParseError::new(
+    //             "Expected `=`.".to_string(),
+    //             ErrorLocation::new(),
+    //         ));
+    //     }
 
-        let expr = self.expression()?;
+    //     let expr = self.expression()?;
 
-        Ok(Var::assign(name, expr))
-    }
-
-    // Attempts to syncronize after an error.
-    fn sync_tokens(&mut self) {
-        todo!()
-    }
+    //     Ok(Var::assign(name, expr))
+    // }
 }
 
 #[derive(Debug)]

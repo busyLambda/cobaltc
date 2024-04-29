@@ -73,9 +73,6 @@ impl TokenKind {
     pub fn is_begin_new_stmt(&self) -> bool {
         matches!(
             self,
-            Self::OpenCurly
-                | Self::OpenParen
-                | Self::OpenBracket
                 | Self::KwIf
                 | Self::KwMatch
                 | Self::KwFunc

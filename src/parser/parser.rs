@@ -1,7 +1,7 @@
-use std::slice::Iter;
+use std::{ops::Range, slice::Iter};
 
 use super::{
-    error::{Location, StructureError},
+    error::{Location, PropagatorError, StructureError, SyncEOF},
     lexer::token::{Token, TokenKind},
 };
 
@@ -73,4 +73,48 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn report_propagators(&mut self, errors: Vec<PropagatorError>, span: Range<usize>) {
+        errors.into_iter().for_each(|err| {
+            self.report_error(StructureError::from_propagator(
+                err,
+                Location::new(span.clone()),
+            ))
+        });
+    }
+    
+    /// Used to sync the input if we get an error given a function (predicate)
+    /// that determines what tokens can be used for syncing.
+    /// See [`SyncStatus`](SyncStatus) for more on this.
+    pub fn sync_to(&mut self, predicate: fn(TokenKind) -> SyncStatus) -> Option<SyncEOF> {
+        loop {
+            if let Some(tok) = self.peek() {
+                match predicate(tok.kind()) {
+                    SyncStatus::Consume => {
+                        self.next();
+                        return None
+                    }
+                    SyncStatus::Continue => {
+                        self.next();
+                    }
+                    SyncStatus::Stop => {
+                        return None
+                    }
+                }
+            } else {
+                // GOT EOF
+                break
+            }
+        }
+        Some(SyncEOF)
+    }
+}
+
+/// Used to make a function (`fn(TokenKind) -> SyncStatus`) for syncing tokens by passing it to [`sync_to`](Parser::sync_to).
+/// - `Consume` takes the sync token.
+/// - `Stop` stops at sync token.
+/// - `Continue` continues since we haven't gotten a sync token yet.
+pub enum SyncStatus {
+    Consume,
+    Stop,
+    Continue,
 }
